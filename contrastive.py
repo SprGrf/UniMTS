@@ -9,7 +9,9 @@ class ContrastiveModule(nn.Module):
         super(ContrastiveModule, self).__init__()
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        model, preprocess = clip.load("ViT-B/32", device=device)
+        local_clip_model_path = "./checkpoint/ViT-B-32.pt"
+        model, preprocess = clip.load(local_clip_model_path, device=device)
+
         del model.visual
         self.model = model
 

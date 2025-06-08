@@ -257,33 +257,34 @@ def load_multiple(dataset_list, padding_size, data_path, split='test', k=None):
 
     return real_inputs_list, real_masks_list, real_labels_list, label_list_list, all_text_list, num_classes_list
 
-def load_custom_data(X_path, y_path, config_path, joint_list, original_sampling_rate, padding_size=200, split='test', k=None, few_shot_path=None):
+def load_custom_data_per_participant(Χ, Υ, config_path, joint_list, original_sampling_rate, padding_size=200, split='test', k=None, few_shot_path=None):
 
-    X = np.load(X_path)
-    real_labels = torch.from_numpy(np.load(y_path))
+    X = Χ*9.80665
+    real_labels = torch.from_numpy(Υ)[:,0,0]
     with open(config_path, 'r') as file:
         data = json.load(file)
-    all_X = np.zeros((X.shape[0], X.shape[1], 22, 6))
+    all_X = np.zeros((X.shape[0], X.shape[1], 22, 6), dtype=np.float16)
+
 
     for i, joint in enumerate(joint_list):
-        all_X[:,:,joint] = np.concatenate((X[:,:,6*i:6*i+3], X[:,:,6*i+3:6*i+6]), axis=-1)
-
+        acc_data = X[:,:,3*i:3*i+3]  
+        gyro_data = np.zeros_like(acc_data).astype(np.float32)  
+        all_X[:,:,joint] = np.concatenate((acc_data, gyro_data), axis=-1).astype(np.float32)  
+    
     all_X = all_X.reshape(all_X.shape[0], all_X.shape[1], 22 * 6)
 
-    # resample real data to 20 Hz
     new_sampling_rate = 20
     new_length = int((all_X.shape[1] / original_sampling_rate) * new_sampling_rate)
     resampled_data = np.array([resample(sequence, new_length) for sequence in all_X])
 
-    # pad real data to args.padding_size
     masks = np.ones_like(resampled_data)
     if resampled_data.shape[1] < padding_size:
-        resampled_data = np.pad(resampled_data, ((0, 0), (0, padding_size - resampled_data.shape[1]), (0, 0)), 'wrap') # N, 200, 6
-        masks = np.pad(masks, ((0, 0), (0, padding_size - masks.shape[1]), (0, 0)), 'constant') # N, 200, 6
+        resampled_data = np.pad(resampled_data, ((0, 0), (0, padding_size - resampled_data.shape[1]), (0, 0)), 'wrap') 
+        masks = np.pad(masks, ((0, 0), (0, padding_size - masks.shape[1]), (0, 0)), 'constant') 
     real_inputs = torch.from_numpy(resampled_data[:,:padding_size,:]).float() 
     real_masks = torch.from_numpy(masks[:,:padding_size,:]).float() 
 
-    if split == 'train' and k and k < len(real_inputs):
+    if split in ['train', 'val'] and k and k < len(real_inputs):
 
         unique_labels = torch.unique(real_labels)
 
@@ -313,7 +314,6 @@ def load_custom_data(X_path, y_path, config_path, joint_list, original_sampling_
 
     print(real_inputs.shape, real_labels.shape)
  
-    # load text
     label_dictionary = data['label_dictionary']
     label_list = [' '.join(labels) for labels in label_dictionary.values()]
     all_text = clip.tokenize(label_list).cuda()

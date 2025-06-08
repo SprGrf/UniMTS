@@ -3,6 +3,8 @@ import numpy as np
 import torch
 import imageio
 import io
+import random 
+import os 
 
 def random_rotation_matrix():
     # Random quaternion
@@ -213,3 +215,121 @@ def compute_metrics_np(similarity_matrix, correct_labels):
     MRR = np.mean(1.0 / correct_label_ranks)
     
     return R_at_1, R_at_2, R_at_3, R_at_4, R_at_5, MRR
+
+def set_random_seed(seed=0):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
+def select_participants(users_array, special_participant_list, training_rate, test=False, loocv=False, round=None):
+    """
+    Selects participants for training, validation, and testing, ensuring each group 
+    has at least one participant from the special list.
+
+    Args:
+        users_array (numpy.ndarray): Array of participants.
+        special_participant_list (list of lists): List of lists of special IDs for different activities.
+        training_rate (float): Percentage of participants to select for training (e.g., 0.3 for 30%).
+        seed (int, optional): Random seed for reproducibility.
+
+    Returns:
+        lists of users
+    """
+    if not 0 <= training_rate <= 1:
+        raise ValueError("Percentage must be between 0 and 1.")
+
+    special_sets = [set(special) for special in special_participant_list]
+
+    if not loocv:
+        while True:
+            
+            users_array = users_array.copy()  
+            random.shuffle(users_array)
+
+            if test:
+                num_train = int(len(users_array) * training_rate)
+                num_remaining = len(users_array) - num_train
+                num_val = num_remaining // 2
+                train_participants = users_array[:num_train]
+                val_participants = users_array[num_train:num_train + num_val] 
+                test_participants = users_array[num_train + num_val:]
+        
+                if (all(special_set.intersection(train_participants) for special_set in special_sets) and
+                    all(special_set.intersection(val_participants) for special_set in special_sets) and
+                    all(special_set.intersection(test_participants) for special_set in special_sets)):
+                    print("train users are", train_participants)
+                    print("validation users are", val_participants)
+                    print("test users are", test_participants)
+                    return train_participants, val_participants, test_participants
+                print("Reshuffling as one or more groups lack special participants...")
+            else:
+                num_train = int(len(users_array) * training_rate)
+                train_participants = users_array[:num_train]
+                val_participants = users_array[num_train:]
+                if (all(special_set.intersection(train_participants) for special_set in special_sets) and
+                    all(special_set.intersection(val_participants) for special_set in special_sets)):
+                    print("train users are", train_participants)
+                    print("validation users are", val_participants)
+                    print("number of validation users", len(val_participants))
+                    return train_participants, val_participants, []
+                print("Reshuffling as one or more groups lack special participants...")      
+    else:
+        if round == 0:
+            reordered_users_array = users_array 
+        else:
+            reordered_users_array = list(users_array)[-round:] + list(users_array)[:-round] 
+        train_participants = reordered_users_array[:-2]
+        val_participants = [reordered_users_array[-2]]
+        test_participants = [reordered_users_array[-1]]
+
+        print("train users are", sorted(train_participants))
+        print("validation users are", sorted(val_participants))
+        print("test users are", sorted(test_participants))
+        return train_participants, val_participants, test_participants
+    
+
+def accumulate_participant_files(args, users_list):
+    seq_len = 125
+    data = []
+    labels = []
+    for participant in users_list:
+        print(participant)
+        file_name = "P" + f"{participant:03}" + ".data"            
+        file_path = os.path.join('./UniMTS_data', args.dataset, file_name)
+
+        if not os.path.isfile(file_path):
+            continue  
+
+        try:
+            participant_data = np.load(file_path, allow_pickle=True)
+            windows, activity_values, user_values = participant_data
+        except Exception as e:
+            print(f"Error loading {file_name}: {e}")
+            continue
+
+        for window, activity, user in zip(windows, activity_values, user_values):
+            window_data = window.to_numpy(dtype=np.float32)
+            usable_length = (window_data.shape[0] // seq_len) * seq_len
+            if usable_length == 0:
+                continue  
+            window_data = window_data[:usable_length, :]
+            reshaped_data = window_data.reshape(-1, seq_len, window_data.shape[1])
+            activity_label = np.full((reshaped_data.shape[0],seq_len, 1), activity, dtype=np.int32)
+            user_label = np.full((reshaped_data.shape[0], seq_len, 1), participant, dtype=np.int32)
+            combined_label = np.concatenate((activity_label, user_label), axis=-1)  
+            data.append(reshaped_data)
+            labels.append(combined_label)
+
+    if data:
+        data = np.concatenate(data, axis=0).astype(np.float32)
+        labels = np.concatenate(labels, axis=0).astype(np.float32)
+
+        print(f"Data and labels saved and returned. Data shape: {data.shape}, Label shape: {labels.shape}")
+        return data, labels
+    else:
+        print("No data processed. Check input folder and file formats.")
+

@@ -1,0 +1,7 @@
+# Ignore virtual environments, data files, results, saved checkpoints. 
+__pycache__/
+unimts/
+checkpoint/
+UniMTS_data/
+results/
+wandb/
