@@ -1,119 +1,8 @@
 # UniMTS: Unified Pre-training for Motion Time Series
 
-🚀 This is the official implementation of the NeurIPS 2024 paper "UniMTS: Unified Pre-training for Motion Time Series".
+Fork of the original repository (https://github.com/xiyuanzh/UniMTS), used for evaluation purposes during my Realistic HAR Master Thesis. To draw the attention and give credits to the original authors, I have removed most of the detailed implementation and usage instructions. For those, please follow the link to the original repository. 
 
-![](./unimts.png)
-
-UniMTS is the first unified pre-training procedure for motion time series that generalizes across diverse device latent factors (positions and orientations) and activities. Specifically, we employ a contrastive learning framework that aligns motion time series with text descriptions enriched by large language models. This helps the model learn the semantics of time series to generalize across activities. Given the absence of large-scale motion time series data, we derive and synthesize time series from existing motion skeleton data with all-joint coverage. Spatio-temporal graph networks are utilized to capture the relationships across joints for generalization across different device locations. We further design rotation-invariant augmentation to make the model agnostic to changes in device mounting orientations. UniMTS shows exceptional generalizability across 18 motion time series classification benchmark datasets, outperforming the best baselines by 340% in the zero-shot setting, 16.3% in the few-shot setting, and 9.2% in the full-shot setting.
-
-🤗 We have released the model weights at Hugging Face: https://huggingface.co/xiyuanz/UniMTS
-
-🤗 Evaluation datasets are available at [Hugging Face](https://huggingface.co/xiyuanz/UniMTS) or [Google Drive](https://drive.google.com/file/d/1ybD5Fx6c4ykJiDGLPQlLn0m77z9EkjLb/view?usp=sharing)
-
-### Installation
-
-```sh
-conda create -n unimts python=3.9
-conda activate unimts
-pip install -r requirements.txt
-```
-
-### Evaluation
-
-#### Evaluate on 18 Benchmark Datasets
-
-All the evaluation data are publicly available as specified in the paper. We prepare fine-tuning and test real data as npy files of shape (number_of_samples, sequence_length, channel_dimension). We also prepare their label descriptions as a json file. For example, the Opportunity dataset has four activities "stand", "walk", "sit", "lie", and the corresponding json file is as follows. 
-
-```json
-{
-    "label_dictionary": {
-        "0": ["stand"],
-        "1": ["walk"],
-        "2": ["sit"],
-        "3": ["lie"]
-    }
-}
-```
-
-Run the script `evaluate.py` for evaluation.
-
-```sh
-python evaluate.py
-```
-
-Or directly run the bash file
-
-```sh
-bash run_evaluation.sh
-```
-
-#### Prepare Custom Dataset for Evaluation
-
-* Prepare time series as npy files of shape (number_of_samples, sequence_length, channel_dimension). For channel_dimension, follow the order of (acc_x, acc_y, acc_z, gyro_x, gyro_y, gyro_z).
-* Prepare a json file for label descriptions as shown above.
-* Normalize time series measurements ($m/s^2$ for acceleration).
-
-run `run_evaluation_custom.sh` as the following example
-```sh
-python evaluate_custom.py \
---batch_size 64 \
---checkpoint './checkpoint/UniMTS.pth' \
---X_path 'UniMTS_data/TNDA-HAR/X_test.npy' \
---y_path 'UniMTS_data/TNDA-HAR/y_test.npy' \
---config_path 'UniMTS_data/TNDA-HAR/TNDA-HAR.json' \
---joint_list 20 2 21 3 11 \
---original_sampling_rate 50 
-```
-
-* `--original_sampling_rate` specifies the original sampling rate of time series (note: we will only the first 10 seconds during evaluation; padding will be automatically applied if the sequence is shorter than 10 seconds).
-* `--joint_list` specifies the order of joints for the `channel_dimension`. The joint locations are numbered based on the following figure.
-
-<p align="center">
-  <img src="./joint_assignment.png" alt="Joint Assignment" width="300" />
-</p>
-
-### Fine-tune
-
-Fine-tune the model with `args.k` samples for each class (k = 1, 2, 3, 5, 10 for few-shot fine-tuning), as well as all the available samples (full-shot fine-tuning). `args.mode` represents the fine-tuning mode, chosen from `full` (fine-tuning both the graph encoder and the linear classifier), `probe` (linear probe, fine-tuning only the linear classifier), and `random` (training from randomly initialized model).
-
-```sh
-for k in 1 2 3 5 10
-do
-python finetune.py --mode full --k $k --batch_size 64 --num_epochs 200 
-done
-
-python finetune.py --mode full --batch_size 64 --num_epochs 200 
-```
-
-Or directly run the bash file
-
-```sh
-bash run_finetune.sh
-```
-
-### Pre-training
-
-To prepare pre-training datasets:
-1. Download the motion skeletons and paired textual descriptions from [HumanML3D](https://github.com/EricGuo5513/HumanML3D)
-2. Convert motion skeletions into BVH files. Run `pos2bvh.py` under the root directory of [inverse kinematics](https://github.com/sigal-raab/Motion)
-3. Derive and synthesize motion time series from BVH files. Run `bvh2ts.py` under the root directory of [IMUSim](https://github.com/martinling/imusim)
-4. Run `python text_aug.py` to further enrich the HumanML3D text descriptions through large language models.
-
-Run the script `pretrain.py` for pre-training. `args.aug` represents using rotation-invariant augmentation (set to 1) or not (set to 0) during pre-training. 
-
-```sh
-python pretrain.py --aug 1 --batch_size 64 
-```
-
-Or directly run the bash file
-
-```sh
-bash run_pretrain.sh
-```
-
-### Citation
-
-If you find our work helpful, please cite the following paper
+Original paper citation:
 ```
 @misc{zhang2024unimtsunifiedpretrainingmotion,
       title={UniMTS: Unified Pre-training for Motion Time Series}, 
@@ -125,3 +14,32 @@ If you find our work helpful, please cite the following paper
       url={https://arxiv.org/abs/2410.19818}, 
 }
 ```
+Original model weights at Hugging Face: https://huggingface.co/xiyuanz/UniMTS. Download and save in a _checkpoint_ folder inside the repository. Make sure you also include the pre-prosecced dataset files in a _UniMTS_data_ folder.
+
+### Installation
+
+```sh
+conda create -n unimts python=3.9
+conda activate unimts
+pip install -r requirements.txt
+```
+
+Alternatively create a python virtual environment using the provided _requirements.txt_. 
+
+### Fine-tune
+
+Use the following command to finetune the model using all available samples for all 7 datasets. This will save the results in a _checkpoint_ folder, which you can then use to evaluate the different cases. 
+
+```sh
+python finetune_custom.py --padding_size 200 --batch_size 8  --checkpoint './checkpoint/UniMTS.pth' --config_path './label_dictionary.json' --joint_list 21 --original_sampling_rate 25 --num_class 7 --case_study cv
+```
+
+### Evaluation
+
+Use the following command to evaluate the previously created and saved models for all datasets. Using the _case_study_ argument, choose between the cross validation (cv) and dataset to datasets (d2d) cases. This will save the results in a _results_ folder. 
+
+```sh
+python -u evaluate_custom.py --batch_size 64 --case_study d2d  --config_path './label_dictionary.json' --joint_list 21 --original_sampling_rate 25  --num_class 7
+```
+
+
